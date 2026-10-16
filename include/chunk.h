@@ -1,0 +1,33 @@
+#pragma once
+
+#include "utils.h"
+#include "array.h"
+#include "value.h"
+
+
+typedef enum {
+
+    OP_CONSTANT,
+    OP_RETURN,
+
+} OpCode;
+
+
+typedef struct {
+
+    arr(uint8_t) code;
+    arr(int) lines;
+    ValueArray constants;
+
+} Chunk;
+
+
+void init_chunk(Chunk*);
+void write_chunk(Chunk*, uint8_t byte, int line);
+int add_constant(Chunk*, Value);
+
+void free_chunk(Chunk*);
+
+
+
+

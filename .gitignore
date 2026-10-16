@@ -1,0 +1,13 @@
+build
+target
+*.exe
+*.out
+*.a
+*.log
+*.txt
+*.zip
+*.tar.gz
+
+
+
+
