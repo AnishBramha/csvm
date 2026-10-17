@@ -5,6 +5,7 @@
 #include "scanner.h"
 #include <stdint.h>
 #include <stdio.h>
+#include "value.h"
 #include "vm.h"
 #include <stdlib.h>
 
@@ -167,6 +168,7 @@ static void grouping(void);
 static void unary(void);
 static void binary(void);
 static void literal(void);
+static void str(void);
 
 
 ParseRule rules[] = {
@@ -209,7 +211,7 @@ ParseRule rules[] = {
     [TOK_SEMICOLON]  = {NULL,     NULL,   PREC_NONE},
     [TOK_SLASH]      = {NULL,     binary, PREC_FACTOR},
     [TOK_STAR]       = {NULL,     binary, PREC_FACTOR},
-    [TOK_STRING]     = {NULL,     NULL,   PREC_NONE},
+    [TOK_STRING]     = {str,      NULL,   PREC_NONE},
     [TOK_SUPER]      = {NULL,     NULL,   PREC_NONE},
     [TOK_THEN]       = {NULL,     NULL,   PREC_NONE},
     [TOK_THIS]       = {NULL,     NULL,   PREC_NONE},
@@ -297,6 +299,12 @@ static void unary(void) {
 
         default: unreachable();
     }
+}
+
+
+static void str(void) {
+
+    emit_constant(obj_val(copy_string(parser.previous.start + 1, parser.previous.len - 2)));
 }
 
 

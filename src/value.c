@@ -1,7 +1,9 @@
 #include "value.h"
 #include "array.h"
 #include "common.h"
+#include "object.h"
 #include <stdio.h>
+#include <string.h>
 
 
 void init_value_array(ValueArray* array) {
@@ -43,6 +45,11 @@ void valprintf(Value value) {
             printf("%g", as_number(value));
             break;
 
+        case VAL_OBJ:
+
+            objprintf(value);
+            break;
+
         default: unreachable();
     }
 }
@@ -58,6 +65,15 @@ bool values_eq(Value a, Value b) {
         case VAL_BOOL:   return as_bool(a) == as_bool(b);
         case VAL_NIL:    return true;
         case VAL_NUMBER: return as_number(a) == as_number(b);
+
+        case VAL_OBJ: {
+
+            ObjString* x = as_string(a);
+            ObjString* y = as_string(b);
+
+            return x->len == y->len && !memcmp(x->chars, y->chars, x->len);
+
+        } break;
 
         default: unreachable();
     }

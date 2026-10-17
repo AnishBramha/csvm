@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vm.h"
+#include "object.h"
 #include "scanner.h"
 
 

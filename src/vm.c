@@ -1,5 +1,7 @@
+#include "array.h"
 #include "debug.h"
 #include "chunk.h"
+#include "object.h"
 #include "utils.h"
 #include "vm.h"
 #include "value.h"
@@ -12,6 +14,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 
 VM vm;
@@ -43,19 +46,25 @@ static void runtime_error(const char* fmt, ...) {
 }
 
 
+static void free_objects(void);
+static void free_object(Obj*);
+
+
 void boot_vm(void) {
 
     reset_stack();
+    vm.objects = NULL;
 }
 
 
 void shutdown_vm(void) {
 
-
+    free_objects();
 }
 
 
 static bool is_falsey(Value);
+static void concatenate(void);
 
 
 static InterpretResult run(void) {
@@ -122,7 +131,25 @@ static InterpretResult run(void) {
             case OP_GT:       binary_op(bool_val, >);   break;
             case OP_LT:       binary_op(bool_val, <);   break;
 
-            case OP_ADD:      binary_op(number_val, +); break;
+            case OP_ADD: {
+
+                if (is_string(peek(0))  && is_string(peek(1)))
+                    concatenate();
+
+                else if (is_number(peek(0)) && is_number(peek(1))) {
+
+                    double b = as_number(pop());
+                    double a = as_number(pop());
+                    push(number_val(a + b));
+
+                } else {
+
+                    runtime_error("Operands must be two numbers or two strings.");
+                    return INTERPRET_RUNTIME_ERR;
+                }
+
+            } break;
+
             case OP_SUBTRACT: binary_op(number_val, -); break;
             case OP_MULTIPLY: binary_op(number_val, *); break;
             case OP_DIVIDE:   binary_op(number_val, /); break;
@@ -214,6 +241,53 @@ static bool is_falsey(Value val) {
 
     return is_nil(val) || (is_bool(val) && !as_bool(val));
 }
+
+
+static void concatenate(void) {
+
+    ObjString* b = as_string(pop());
+    ObjString* a = as_string(pop());
+
+    int len = a->len + b->len;
+    char* chars = (char*)calloc(len + 1, sizeof(char));
+    memcpy(chars, a->chars, a->len);
+    memcpy(chars + a->len, b->chars, b->len);
+    chars[len] = NIL;
+
+    ObjString* result = take_string(chars, len);
+    push(obj_val(result));
+}
+
+
+static void free_objects(void) {
+
+    Obj* object = vm.objects;
+
+    while (object) {
+
+        Obj* next = object->next;
+        free_object(object);
+        object = next;
+    }
+}
+
+
+static void free_object(Obj* object) {
+
+    switch (object->type) {
+    
+        case OBJ_STRING: {
+
+            ObjString* ostring = (ObjString*)object;
+            free(ostring->chars);
+            free(object); object = NULL;
+
+        } break;
+    }
+}
+
+
+
 
 
 
