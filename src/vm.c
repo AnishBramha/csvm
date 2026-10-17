@@ -2,11 +2,14 @@
 #include "chunk.h"
 #include "utils.h"
 #include "vm.h"
+#include "value.h"
 #include "common.h"
 #include "value.h"
 #include "debug.h"
 #include "compiler.h"
 #include <math.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -14,9 +17,29 @@
 VM vm;
 
 
+static Value peek(int distance);
+
 static void reset_stack(void) {
 
     vm.stackTop = vm.stack;
+}
+
+
+static void runtime_error(const char* fmt, ...) {
+
+    va_list args;
+    va_start(args, fmt);
+
+    vfprintf(stderr, fmt, args);
+
+    va_end(args);
+    fputc('\n', stderr);
+
+    size_t instruction = vm.ip - vm.chunk->code - 1;
+    int line = vm.chunk->lines[instruction];
+    eprintf("[line %d] in script\n", line);
+
+    reset_stack();
 }
 
 
@@ -32,19 +55,28 @@ void shutdown_vm(void) {
 }
 
 
+static bool is_falsey(Value);
+
+
 static InterpretResult run(void) {
 
     #define read_byte() (*vm.ip++)
     #define read_constant() (vm.chunk->constants.values[read_byte()])
 
-    #define binary_op(op)     \
-                              \
-        do {                  \
-                              \
-            double b = pop(); \
-            double a = pop(); \
-            push(a op b);     \
-                              \
+    #define binary_op(valueType, op)                          \
+                                                              \
+        do {                                                  \
+                                                              \
+            if (!is_number(peek(0)) || !is_number(peek(1))) { \
+                                                              \
+                runtime_error("Operands must be numbers.");   \
+                return INTERPRET_RUNTIME_ERR;                 \
+            }                                                 \
+                                                              \
+            double b = as_number(pop());                      \
+            double a = as_number(pop());                      \
+            push(valueType(a op b));                          \
+                                                              \
         } while (false);
 
     loop {
@@ -75,17 +107,51 @@ static InterpretResult run(void) {
 
             } break;
 
-            case OP_ADD:      binary_op(+); break;
-            case OP_SUBTRACT: binary_op(-); break;
-            case OP_MULTIPLY: binary_op(*); break;
-            case OP_DIVIDE:   binary_op(/); break;
-            case OP_NEGATE:   push(-pop()); break;
+            case OP_NIL:   push(nil_val);         break;
+            case OP_TRUE:  push(bool_val(true));  break;
+            case OP_FALSE: push(bool_val(false)); break;
+
+            case OP_EQ: {
+    
+                Value b = pop();
+                Value a = pop();
+                push(bool_val(values_eq(a, b)));
+
+            } break;
+
+            case OP_GT:       binary_op(bool_val, >);   break;
+            case OP_LT:       binary_op(bool_val, <);   break;
+
+            case OP_ADD:      binary_op(number_val, +); break;
+            case OP_SUBTRACT: binary_op(number_val, -); break;
+            case OP_MULTIPLY: binary_op(number_val, *); break;
+            case OP_DIVIDE:   binary_op(number_val, /); break;
+
+            case OP_NOT: push(bool_val(is_falsey(pop()))); break;
+
+            case OP_NEGATE: {
+
+                if (!is_number(peek(0))) {
+
+                    runtime_error("Operand must be number.");
+                    return INTERPRET_RUNTIME_ERR;
+                }
+
+                push(number_val(-as_number(pop())));
+
+            } break;
             
             case OP_POW: {
 
-                double b = pop();
-                double a = pop();
-                push(pow(a, b));
+                if (!is_number(peek(0)) || !is_number(peek(1))) {
+
+                    runtime_error("Operands must be numbers.");
+                    return INTERPRET_RUNTIME_ERR;
+                }
+                   
+                double b = as_number(pop());
+                double a = as_number(pop());
+                push(number_val(pow(a, b)));
 
             } break;
 
@@ -135,6 +201,18 @@ void push(Value value) {
 Value pop(void) {
 
     return *(--vm.stackTop);
+}
+
+
+static Value peek(int distance) {
+
+    return vm.stackTop[-1 - distance];
+}
+
+
+static bool is_falsey(Value val) {
+
+    return is_nil(val) || (is_bool(val) && !as_bool(val));
 }
 
 

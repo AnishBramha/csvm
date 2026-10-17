@@ -166,6 +166,7 @@ static void number(void);
 static void grouping(void);
 static void unary(void);
 static void binary(void);
+static void literal(void);
 
 
 ParseRule rules[] = {
@@ -173,7 +174,7 @@ ParseRule rules[] = {
     [TOK_AND]        = {NULL,     NULL,   PREC_NONE},
     [TOK_AS]         = {NULL,     NULL,   PREC_NONE},
     [TOK_ASSIGN]     = {NULL,     NULL,   PREC_NONE},
-    [TOK_BANG]       = {NULL,     NULL,   PREC_NONE},
+    [TOK_BANG]       = {unary,    NULL,   PREC_NONE},
     [TOK_CLASS]      = {NULL,     NULL,   PREC_NONE},
     [TOK_COMMA]      = {NULL,     NULL,   PREC_NONE},
     [TOK_DEF]        = {NULL,     NULL,   PREC_NONE},
@@ -181,12 +182,12 @@ ParseRule rules[] = {
     [TOK_DOT]        = {NULL,     NULL,   PREC_NONE},
     [TOK_ELSE]       = {NULL,     NULL,   PREC_NONE},
     [TOK_EOF]        = {NULL,     NULL,   PREC_NONE},
-    [TOK_EQ]         = {NULL,     NULL,   PREC_NONE},
+    [TOK_EQ]         = {NULL,     binary, PREC_EQ},
     [TOK_ERR]        = {NULL,     NULL,   PREC_NONE},
-    [TOK_FALSE]      = {NULL,     NULL,   PREC_NONE},
+    [TOK_FALSE]      = {literal,  NULL,   PREC_NONE},
     [TOK_FOR]        = {NULL,     NULL,   PREC_NONE},
-    [TOK_GTE]        = {NULL,     NULL,   PREC_NONE},
-    [TOK_GT]         = {NULL,     NULL,   PREC_NONE},
+    [TOK_GTE]        = {NULL,     binary, PREC_CMP},
+    [TOK_GT]         = {NULL,     binary, PREC_CMP},
     [TOK_IDENTIFIER] = {NULL,     NULL,   PREC_NONE},
     [TOK_IF]         = {NULL,     NULL,   PREC_NONE},
     [TOK_IOPUTFN]    = {NULL,     NULL,   PREC_NONE},
@@ -194,11 +195,11 @@ ParseRule rules[] = {
     [TOK_JUMP]       = {NULL,     NULL,   PREC_NONE},
     [TOK_LBRACE]     = {NULL,     NULL,   PREC_NONE},
     [TOK_LPAREN]     = {grouping, NULL,   PREC_NONE},
-    [TOK_LTE]        = {NULL,     NULL,   PREC_NONE},
-    [TOK_LT]         = {NULL,     NULL,   PREC_NONE},
+    [TOK_LTE]        = {NULL,     binary, PREC_CMP},
+    [TOK_LT]         = {NULL,     binary, PREC_CMP},
     [TOK_MINUS]      = {unary,    binary, PREC_TERM},
-    [TOK_NEQ]        = {NULL,     NULL,   PREC_NONE},
-    [TOK_NIL]        = {NULL,     NULL,   PREC_NONE},
+    [TOK_NEQ]        = {NULL,     binary, PREC_EQ},
+    [TOK_NIL]        = {literal,  NULL,   PREC_NONE},
     [TOK_NUMBER]     = {number,   NULL,   PREC_NONE},
     [TOK_OR]         = {NULL,     NULL,   PREC_NONE},
     [TOK_PLUS]       = {NULL,     binary, PREC_TERM},
@@ -212,7 +213,7 @@ ParseRule rules[] = {
     [TOK_SUPER]      = {NULL,     NULL,   PREC_NONE},
     [TOK_THEN]       = {NULL,     NULL,   PREC_NONE},
     [TOK_THIS]       = {NULL,     NULL,   PREC_NONE},
-    [TOK_TRUE]       = {NULL,     NULL,   PREC_NONE},
+    [TOK_TRUE]       = {literal,  NULL,   PREC_NONE},
     [TOK_VAR]        = {NULL,     NULL,   PREC_NONE},
     [TOK_WHILE]      = {NULL,     NULL,   PREC_NONE},
 };
@@ -231,12 +232,32 @@ static void binary(void) {
     parse_precedence((Precedence)(rule->precedence + 1));
 
     switch (operatorType) {
+
+        case TOK_NEQ:   emit_bytes(OP_EQ, OP_NOT); break;
+        case TOK_EQ:    emit_byte(OP_EQ);          break;
+        case TOK_GT:    emit_byte(OP_GT);          break;
+        case TOK_GTE:   emit_bytes(OP_LT, OP_NOT); break;
+        case TOK_LT:    emit_byte(OP_LT);          break;
+        case TOK_LTE:   emit_bytes(OP_GT, OP_NOT); break;
     
-        case TOK_PLUS:  emit_byte(OP_ADD);      break;
-        case TOK_MINUS: emit_byte(OP_SUBTRACT); break;
-        case TOK_STAR:  emit_byte(OP_MULTIPLY); break;
-        case TOK_SLASH: emit_byte(OP_DIVIDE);   break;
-        case TOK_POW:   emit_byte(OP_POW);   break;
+        case TOK_PLUS:  emit_byte(OP_ADD);         break;
+        case TOK_MINUS: emit_byte(OP_SUBTRACT);    break;
+        case TOK_STAR:  emit_byte(OP_MULTIPLY);    break;
+        case TOK_SLASH: emit_byte(OP_DIVIDE);      break;
+        case TOK_POW:   emit_byte(OP_POW);         break;
+
+        default: unreachable();
+    }
+}
+
+
+static void literal(void) {
+
+    switch (parser.previous.type) {
+    
+        case TOK_FALSE: emit_byte(OP_FALSE); break;
+        case TOK_NIL:   emit_byte(OP_TRUE);  break;
+        case TOK_TRUE:  emit_byte(OP_TRUE);  break;
 
         default: unreachable();
     }
@@ -259,7 +280,7 @@ static void grouping(void) {
 static void number(void) {
 
     double value = strtod(parser.previous.start, NULL);
-    emit_constant(value);
+    emit_constant(number_val(value));
 }
 
 
@@ -270,7 +291,8 @@ static void unary(void) {
     parse_precedence(PREC_UNARY);
 
     switch (operatorType) {
-    
+
+        case TOK_BANG:  emit_byte(OP_NOT);    break;
         case TOK_MINUS: emit_byte(OP_NEGATE); break;
 
         default: unreachable();
