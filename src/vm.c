@@ -5,7 +5,10 @@
 #include "common.h"
 #include "value.h"
 #include "debug.h"
+#include "compiler.h"
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 
 VM vm;
@@ -38,8 +41,8 @@ static InterpretResult run(void) {
                               \
         do {                  \
                               \
-            double a = pop(); \
             double b = pop(); \
+            double a = pop(); \
             push(a op b);     \
                               \
         } while (false);
@@ -78,6 +81,14 @@ static InterpretResult run(void) {
             case OP_DIVIDE:   binary_op(/); break;
             case OP_NEGATE:   push(-pop()); break;
             
+            case OP_POW: {
+
+                double b = pop();
+                double a = pop();
+                push(pow(a, b));
+
+            } break;
+
             case OP_RETURN:
 
                 valprintf(pop());
@@ -93,12 +104,24 @@ static InterpretResult run(void) {
 }
 
 
-InterpretResult interpret(Chunk* chunk) {
+InterpretResult interpret(const char* src) {
 
-    vm.chunk = chunk;
+    Chunk chunk;
+    init_chunk(&chunk);
+
+    if (!compile(src, &chunk)) {
+
+        free_chunk(&chunk);
+        return INTERPRET_COMPILE_ERR;
+    }
+
+    vm.chunk = &chunk;
     vm.ip = vm.chunk->code;
 
-    return run();
+    InterpretResult result = run();
+
+    free_chunk(&chunk);
+    return result;
 }
 
 

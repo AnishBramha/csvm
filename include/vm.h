@@ -32,7 +32,7 @@ extern VM vm;
 void boot_vm(void);
 void shutdown_vm(void);
 
-InterpretResult interpret(Chunk*);
+InterpretResult interpret(const char* src);
 
 void push(Value);
 Value pop(void);

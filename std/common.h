@@ -54,15 +54,15 @@ typedef enum {
     } while (0)
 
 
-#define panic(fmt, ...)                                                       \
-                                                                              \
-    do {                                                                      \
-                                                                              \
-        char msg[ERRMSG_LEN_MAX];                                             \
-        snprintf(msg, ERRMSG_LEN_MAX - 1, fmt __VA_OPT__(,) __VA_ARGS__);     \
-        fprintf(stderr, "PANIC: %s | REASON: %s\n", msg, strerror(errno));    \
-        abort();                                                              \
-                                                                              \
+#define panic(fmt, ...)                                                                                              \
+                                                                                                                     \
+    do {                                                                                                             \
+                                                                                                                     \
+        char msg[ERRMSG_LEN_MAX];                                                                                    \
+        snprintf(msg, ERRMSG_LEN_MAX - 1, fmt __VA_OPT__(,) __VA_ARGS__);                                            \
+        fprintf(stderr, "[File: %s | Line: %d] PANIC: %s | REASON: %s\n", __FILE__, __LINE__, msg, strerror(errno)); \
+        abort();                                                                                                     \
+                                                                                                                     \
     } while (0)
 
 
