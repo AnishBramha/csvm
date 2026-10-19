@@ -70,9 +70,9 @@ int main(int argc, char** argv) {
 
     switch (argc) {
 
-        case 1: repl(); break;
-        case 2: run_file(argv[1]); break;
-        case 3: eprintf("Usage: csvm [path]\n"); exit(EX_USAGE);
+        case 1:  repl(); break;
+        case 2:  run_file(argv[1]); break;
+        default: eprintf("Usage: csvm [path]\n"); exit(EX_USAGE);
     }
 
     shutdown_vm();

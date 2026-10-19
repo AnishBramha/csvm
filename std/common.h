@@ -6,6 +6,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <assert.h>
+
 
 #define ERRMSG_LEN_MAX 256
 #define CHUNK 1024
@@ -69,15 +71,30 @@ typedef enum {
 #define eprintf(fmt, ...) fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__)
 
 
-#define random(harvest, start, end)                   \
-                                                      \
-    do {                                              \
-                                                      \
-        srand((unsigned)time(NULL));                  \
-        (harvest) = ((a) + rand() % ((b) - (a) + 1)); \
-                                                      \
+#define ensure_random() srand((unsigned)time(NULL));
+
+
+#define randint(harvest, start, end)                            \
+                                                                \
+    do {                                                        \
+                                                                \
+        assert((start) <= (end));                               \
+        (harvest) = ((start) + rand() % ((end) - (start) + 1)); \
+                                                                \
     } while (0)
 
+
+#define random(harvest, start, end)                                              \
+                                                                                 \
+    do {                                                                         \
+                                                                                 \
+        assert((start) <= (end));                                                \
+        (harvest) = (start) + (((double)rand() / RAND_MAX) * ((end) - (start))); \
+                                                                                 \
+    } while (0)
+
+
+#define randnormal(harvest) random(harvest, 0, 1)
 
 
 

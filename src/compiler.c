@@ -169,6 +169,14 @@ static void unary(void);
 static void binary(void);
 static void literal(void);
 static void str(void);
+static void declaration(void);
+static void statement(void);
+static void declaration(void);
+static void ioputf_statement(void);
+static void ioputfn_statement(void);
+static void expression_statement(void);
+
+static void synchronise(void);
 
 
 ParseRule rules[] = {
@@ -224,6 +232,22 @@ ParseRule rules[] = {
 static ParseRule* get_rule(TokenType type) {
 
     return &rules[type];
+}
+
+
+static bool check(TokenType type) {
+
+    return parser.current.type == type;
+}
+
+
+static bool match(TokenType type) {
+
+    if (!check(type))
+        return false;
+
+    advance();
+    return true;
 }
 
 
@@ -308,6 +332,82 @@ static void str(void) {
 }
 
 
+static void declaration(void) {
+
+    statement();
+
+    if (parser.panicMode)
+        synchronise();
+}
+
+
+static void statement(void) {
+
+    if (match(TOK_IOPUTF))
+        ioputf_statement();
+
+    else if (match(TOK_IOPUTFN))
+        ioputfn_statement();
+
+    else
+        expression_statement();
+}
+
+
+static void ioputf_statement(void) {
+
+    expression();
+    consume(TOK_SEMICOLON, "Expect `;` after value.");
+    emit_byte(OP_IOPUTF);
+}
+
+
+static void ioputfn_statement(void) {
+
+    expression();
+    consume(TOK_SEMICOLON, "Expect `;` after value.");
+    emit_byte(OP_IOPUTFN);
+}
+
+
+static void expression_statement(void) {
+
+    expression();
+    consume(TOK_SEMICOLON, "Expect `;` after expression.");
+    emit_byte(OP_POP);
+}
+
+
+static void synchronise(void) {
+
+    parser.panicMode = false;
+
+    while (parser.current.type != TOK_EOF) {
+
+        if (parser.previous.type == TOK_SEMICOLON)
+            return;
+
+        switch (parser.current.type) {
+            
+            case TOK_CLASS:
+            case TOK_DEF:
+            case TOK_VAR:
+            case TOK_FOR:
+            case TOK_IF:
+            case TOK_WHILE:
+            case TOK_IOPUTF:
+            case TOK_IOPUTFN:
+            case TOK_JUMP:
+                return;
+
+            default:;
+        }
+
+        advance();
+    }
+}
+
+
 bool compile(const char* src, Chunk* chunk) {
 
     init_scanner(src);
@@ -317,8 +417,10 @@ bool compile(const char* src, Chunk* chunk) {
     parser.panicMode = false;
 
     advance();
-    expression();
-    consume(TOK_EOF, "Expect end of expression.");
+
+    while (!match(TOK_EOF))
+        declaration();
+
     end_compiler();
 
     return !parser.hadError;

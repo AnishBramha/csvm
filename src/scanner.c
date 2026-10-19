@@ -218,6 +218,22 @@ static TokenType identifier_type(void) {
             }
 
         } break;
+
+        case 'i': {
+
+            if (scanner.current - scanner.start > 1) {
+
+                switch (scanner.start[1]) {
+
+                    case 'f':
+                        return check_keyword(2, 0, "", TOK_IF);
+
+                    case 'o':
+                        return (check_keyword(2, 5, "putfn", TOK_IOPUTFN) == TOK_IOPUTFN) ? TOK_IOPUTFN : check_keyword(2, 4, "putf", TOK_IOPUTF);
+                }
+            }
+
+        } break;
     }
 
     return TOK_IDENTIFIER;
@@ -303,6 +319,7 @@ Token scan_token(void) {
         case '<': return make_token(match('=') ? TOK_LTE : TOK_LT);
         case '>': return make_token(match('=') ? TOK_GTE : TOK_GT);
         case '/': return make_token(match('=') ? TOK_NEQ : TOK_SLASH);
+        case ':': return make_token(match('=') ? TOK_ASSIGN : TOK_ERR);
 
         case '\"': return str();
     }

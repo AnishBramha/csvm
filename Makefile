@@ -3,7 +3,7 @@ CC = cc
 CFLAGS = -std=c23 -Wall -Wextra -Werror -Wno-unused-parameter -fno-asm -Istd -Iinclude -ggdb -g -fsanitize=address -Wno-implicit-fallthrough
 LDFLAGS = -ggdb -g -fsanitize=address -lm
 
-TARGET = target/shell.out
+TARGET = target/csvm.out
 BUILD_DIR = build
 TARGET_DIR = target
 

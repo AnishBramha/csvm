@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "value.h"
 #include "vm.h"
+#include <stdint.h>
 
 
 extern VM vm;
@@ -34,6 +35,7 @@ struct ObjString {
     Obj obj;
     int len;
     char* chars;
+    uint32_t hash;
 };
 
 

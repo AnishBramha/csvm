@@ -1,7 +1,11 @@
 #pragma once
 
 #include "header.h"
+#include <assert.h>
+#include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
+#include "common.h"
 
 // [Header][Array]
 //          ^
@@ -17,9 +21,9 @@ typedef arr(char) string;
                                                                                           \
         if (!(arr)) {                                                                     \
                                                                                           \
-            Header* header = malloc(sizeof(Header) + sizeof(*(arr)) * ARR_INIT_CAPACITY); \
+            Header* header = malloc(sizeof(Header) + sizeof(*(arr)) * INIT_CAPACITY);     \
             header->count = 0;                                                            \
-            header->capacity = ARR_INIT_CAPACITY;                                         \
+            header->capacity = INIT_CAPACITY;                                             \
             (arr) = (void*)(header + 1);                                                  \
         }                                                                                 \
                                                                                           \
@@ -43,7 +47,7 @@ typedef arr(char) string;
                                                                                           \
         if (!(arr)) {                                                                     \
                                                                                           \
-            size_t size = ((n) < ARR_INIT_CAPACITY) ? ARR_INIT_CAPACITY : (n);            \
+            size_t size = ((n) < INIT_CAPACITY) ? INIT_CAPACITY : (n);                    \
             Header* header = malloc(sizeof(Header) + sizeof(*(arr)) * size);              \
             header->count = 0;                                                            \
             header->capacity = size;                                                      \
@@ -135,6 +139,67 @@ typedef arr(char) string;
         ((Header*)(str) - 1)->count--; \
                                        \
     } while (0)
+
+
+#define arr_head(arr) (assert(arr_len(arr) > 0), (arr)[0])
+#define arr_tail(arr) (assert(arr_len(arr) > 0), (arr)[arr_len(arr) - 1])
+
+#define arr_pop(arr) (assert(arr_len(arr) > 0), (arr[--((Header*)(arr) - 1)->count]))
+
+
+#define arr_del(arr, idx)                                                                 \
+                                                                                          \
+    do {                                                                                  \
+                                                                                          \
+        assert((arr) && 0 <= (idx) && (idx) < arr_len(arr));                              \
+                                                                                          \
+        memmove(&(arr)[idx], &(arr)[idx + 1], (arr_len(arr) - idx - 1) * sizeof(*(arr))); \
+        ((Header*)(arr) - 1)->count--;                                                    \
+                                                                                          \
+    } while (0)
+
+
+#define arr_insert(arr, x, idx)                                                       \
+                                                                                      \
+    do {                                                                              \
+                                                                                      \
+        assert(0 <= (idx) && (idx) <= arr_len(arr));                                  \
+                                                                                      \
+        arr_alloc((arr), 1);                                                          \
+        memmove(&(arr)[idx + 1], &(arr)[idx], (arr_len(arr) - idx) * sizeof(*(arr))); \
+        (arr)[idx] = (x);                                                             \
+        ((Header*)(arr) - 1)->count++;                                                \
+                                                                                      \
+    } while (0)
+
+
+#define arr_shuffle(arr)                                          \
+                                                                  \
+    do {                                                          \
+                                                                  \
+        if (arr) {                                                \
+                                                                  \
+            Header* header = (Header*)(arr) - 1;                  \
+                                                                  \
+            if (header->count > 1) {                              \
+                                                                  \
+                downrange(size_t, i, header->count - 1, 0, 1) {   \
+                                                                  \
+                    size_t j;                                     \
+                    randint(j, 0, i);                             \
+                                                                  \
+                    unsigned char tmp[sizeof(*(arr))];            \
+                    memcpy(tmp, &(arr)[i], sizeof(*(arr)));       \
+                    memcpy(&(arr)[i], &(arr)[j], sizeof(*(arr))); \
+                    memcpy(&(arr)[j], tmp, sizeof(*(arr)));       \
+                }                                                 \
+            }                                                     \
+        }                                                         \
+                                                                  \
+    } while (0)
+
+
+
 
 
 

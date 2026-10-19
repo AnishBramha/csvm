@@ -65,15 +65,7 @@ bool values_eq(Value a, Value b) {
         case VAL_BOOL:   return as_bool(a) == as_bool(b);
         case VAL_NIL:    return true;
         case VAL_NUMBER: return as_number(a) == as_number(b);
-
-        case VAL_OBJ: {
-
-            ObjString* x = as_string(a);
-            ObjString* y = as_string(b);
-
-            return x->len == y->len && !memcmp(x->chars, y->chars, x->len);
-
-        } break;
+        case VAL_OBJ:    return as_obj(a) == as_obj(b);
 
         default: unreachable();
     }

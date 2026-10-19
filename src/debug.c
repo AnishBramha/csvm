@@ -62,6 +62,9 @@ int disassemble_instruction(Chunk* chunk, int offset) {
         case OP_EQ:
             return simple_instruction("OP_EQ", offset);
 
+        case OP_POP:
+            return simple_instruction("OP_POP", offset);
+
         case OP_GT:
             return simple_instruction("OP_GT", offset);
 
@@ -88,6 +91,12 @@ int disassemble_instruction(Chunk* chunk, int offset) {
     
         case OP_POW:
             return simple_instruction("OP_POW", offset);
+    
+        case OP_IOPUTF:
+            return simple_instruction("OP_IOPUTF", offset);
+    
+        case OP_IOPUTFN:
+            return simple_instruction("OP_IOPUTFN", offset);
     
         case OP_RETURN:
             return simple_instruction("OP_RETURN", offset);

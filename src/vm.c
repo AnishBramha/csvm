@@ -2,6 +2,7 @@
 #include "debug.h"
 #include "chunk.h"
 #include "object.h"
+#include "table.h"
 #include "utils.h"
 #include "vm.h"
 #include "value.h"
@@ -54,11 +55,13 @@ void boot_vm(void) {
 
     reset_stack();
     vm.objects = NULL;
+    init_table(&vm.strings);
 }
 
 
 void shutdown_vm(void) {
 
+    free_table(&vm.strings);
     free_objects();
 }
 
@@ -119,6 +122,7 @@ static InterpretResult run(void) {
             case OP_NIL:   push(nil_val);         break;
             case OP_TRUE:  push(bool_val(true));  break;
             case OP_FALSE: push(bool_val(false)); break;
+            case OP_POP:   pop();                 break;
 
             case OP_EQ: {
     
@@ -182,11 +186,22 @@ static InterpretResult run(void) {
 
             } break;
 
-            case OP_RETURN:
+            case OP_IOPUTF: {
+
+                valprintf(pop());
+                break;
+
+            } break;
+
+            case OP_IOPUTFN: {
 
                 valprintf(pop());
                 putchar('\n');
+                break;
 
+            } break;
+
+            case OP_RETURN:
                 return INTERPRET_OK;
         }
     }

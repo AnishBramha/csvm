@@ -11,6 +11,7 @@ typedef enum {
     OP_NIL,
     OP_TRUE,
     OP_FALSE,
+    OP_POP,
     OP_EQ,
     OP_GT,
     OP_LT,
@@ -20,6 +21,8 @@ typedef enum {
     OP_DIVIDE,
     OP_NOT,
     OP_NEGATE,
+    OP_IOPUTF,
+    OP_IOPUTFN,
     OP_POW,
     OP_RETURN,
 

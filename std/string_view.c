@@ -1,20 +1,12 @@
-#include "common.h"
 #include "string_view.h"
 #include <assert.h>
 #include <ctype.h>
 #include <string.h>
-#include <stdio.h>
 
 
-char* sv_to_c_str(string_view sv) {
+char* sv_to_c_str(const string_view sv) {
 
     return strndup(sv.str, sv.count);
-}
-
-
-int sv_is(string_view sv, const char* s) {
-
-    return (size_t)sv.count == strlen(s) && !strncmp(sv.str, s, sv.count);
 }
 
 
@@ -28,32 +20,48 @@ string_view sv_from_c_str(char* str) {
 }
 
 
-int sv_neq_cstr(string_view s1, char* s2, int n) {
+int sv_neq_cstr(const string_view s1, const char* s2, const int n) {
 
-    int len = (int)strlen(s2);
+    assert(n >= 0);
 
-    assert(n <= s1.count || n <= len);
+    int len = n;
 
-    return !strncmp(s1.str, s2, n);
+    if (n > s1.count)
+        len = s1.count;
+
+    const int len2 = (const int)strlen(s2);
+
+    if (n > len2)
+        len = len2;
+
+    return !strncmp(s1.str, s2, len);
 }
 
 
-int sv_neq(string_view* s1, string_view* s2, int n) {
+int sv_neq(const string_view s1, const string_view s2, const int n) {
 
-    assert(n <= s1->count || n <= s2->count);
+    assert(n >= 0);
 
-    return !memcmp(s1->str, s2->str, n);
+    int len = n;
+
+    if (n > s1.count)
+        len = s1.count;
+
+    if (n > s2.count)
+        len = s2.count;
+
+    return !memcmp(s1.str, s2.str, len);
 }
 
 
-string_view sv_substr(string_view* sv, int start, int end) {
+string_view sv_substr(const string_view sv, const int start, const int end) {
 
-    assert(start <= end && start >= 0 && end >= 0 && start < sv->count && end < sv->count);
+    assert(start <= end && start >= 0 && end >= 0 && start < sv.count && end < sv.count);
 
     return (string_view) {
 
         .count = end - start + 1,
-        .str = sv->str + start,
+        .str = sv.str + start,
     };
 }
 
