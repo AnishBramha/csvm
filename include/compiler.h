@@ -36,7 +36,7 @@ typedef enum {
 } Precedence;
 
 
-typedef void (*ParseFn)(void);
+typedef void (*ParseFn)(bool canAssign);
 
 
 typedef struct {
@@ -49,6 +49,26 @@ typedef struct {
 
 
 extern ParseRule rules[];
+
+
+typedef struct {
+
+    Token name;
+    int depth;
+
+} Local;
+
+
+typedef struct {
+
+    Local locals[UINT8_COUNT];
+    int localCount;
+    int scopeDepth;
+
+} Compiler;
+
+
+extern Compiler* current;
 
 
 bool compile(const char* src, Chunk*);

@@ -1,6 +1,7 @@
 #include "compiler.h"
 #include "chunk.h"
 #include "common.h"
+#include "object.h"
 #include "utils.h"
 #include "scanner.h"
 #include <stdint.h>
@@ -15,6 +16,7 @@
 
 
 Parser parser;
+Compiler* current = NULL;
 Chunk* compilingChunk;
 
 
@@ -125,7 +127,16 @@ static void emit_constant(Value value) {
 }
 
 
+static void init_compiler(Compiler* compiler) {
+
+    compiler->localCount = 0;
+    compiler->scopeDepth = 0;
+    current = compiler;
+}
+
+
 static ParseRule* get_rule(TokenType);
+static bool match(TokenType type);
 
 
 static void parse_precedence(Precedence precedence) {
@@ -139,14 +150,37 @@ static void parse_precedence(Precedence precedence) {
         return;
     }
 
-    prefixRule();
+    bool canAssign = precedence <= PREC_ASSIGN;
+    prefixRule(canAssign);
 
     while (precedence <= get_rule(parser.current.type)->precedence) {
 
         advance();
         ParseFn infixRule = get_rule(parser.previous.type)->infix;
-        infixRule();
+        infixRule(canAssign);
     }
+
+    if (canAssign && match(TOK_ASSIGN))
+        error("Invalid assignment target.");
+}
+
+
+static uint8_t identifier_constant(Token* name) {
+
+    return make_constant(obj_val(copy_string(name->start, name->len)));
+}
+
+
+static uint8_t parse_variable(const char* errmsg) {
+
+    consume(TOK_IDENTIFIER, errmsg);
+    return identifier_constant(&parser.previous);
+}
+
+
+static void define_variable(uint8_t global) {
+
+    emit_bytes(OP_DEFINE_GLOBAL, global);
 }
 
 
@@ -163,18 +197,35 @@ static void end_compiler(void) {
 }
 
 
-static void number(void);
-static void grouping(void);
-static void unary(void);
-static void binary(void);
-static void literal(void);
-static void str(void);
+static bool check(TokenType type) {
+
+    return parser.current.type == type;
+}
+
+
+static bool match(TokenType type) {
+
+    if (!check(type))
+        return false;
+
+    advance();
+    return true;
+}
+
+
+static void number(bool canAssign);
+static void grouping(bool canAssign);
+static void unary(bool canAssign);
+static void binary(bool canAssign);
+static void literal(bool canAssign);
+static void str(bool canAssign);
 static void declaration(void);
 static void statement(void);
-static void declaration(void);
 static void ioputf_statement(void);
 static void ioputfn_statement(void);
 static void expression_statement(void);
+static void var_declaration(void);
+static void variable(bool canAssign);
 
 static void synchronise(void);
 
@@ -198,7 +249,7 @@ ParseRule rules[] = {
     [TOK_FOR]        = {NULL,     NULL,   PREC_NONE},
     [TOK_GTE]        = {NULL,     binary, PREC_CMP},
     [TOK_GT]         = {NULL,     binary, PREC_CMP},
-    [TOK_IDENTIFIER] = {NULL,     NULL,   PREC_NONE},
+    [TOK_IDENTIFIER] = {variable, NULL,   PREC_NONE},
     [TOK_IF]         = {NULL,     NULL,   PREC_NONE},
     [TOK_IOPUTFN]    = {NULL,     NULL,   PREC_NONE},
     [TOK_IOPUTF]     = {NULL,     NULL,   PREC_NONE},
@@ -235,23 +286,7 @@ static ParseRule* get_rule(TokenType type) {
 }
 
 
-static bool check(TokenType type) {
-
-    return parser.current.type == type;
-}
-
-
-static bool match(TokenType type) {
-
-    if (!check(type))
-        return false;
-
-    advance();
-    return true;
-}
-
-
-static void binary(void) {
+static void binary(bool canAssign) {
 
     TokenType operatorType = parser.previous.type;
     ParseRule* rule = get_rule(operatorType);
@@ -277,7 +312,7 @@ static void binary(void) {
 }
 
 
-static void literal(void) {
+static void literal(bool canAssign) {
 
     switch (parser.previous.type) {
     
@@ -296,21 +331,21 @@ static void expression(void) {
 }
 
 
-static void grouping(void) {
+static void grouping(bool canAssign) {
 
     expression();
     consume(TOK_RPAREN, "Expect `)` after expression.");
 }
 
 
-static void number(void) {
+static void number(bool canAssign) {
 
     double value = strtod(parser.previous.start, NULL);
     emit_constant(number_val(value));
 }
 
 
-static void unary(void) {
+static void unary(bool canAssign) {
 
     TokenType operatorType = parser.previous.type;
 
@@ -326,15 +361,33 @@ static void unary(void) {
 }
 
 
-static void str(void) {
+static void str(bool canAssign) {
 
     emit_constant(obj_val(copy_string(parser.previous.start + 1, parser.previous.len - 2)));
 }
 
 
+static void named_variable(Token name, bool canAssign) {
+
+    uint8_t arg = identifier_constant(&name);
+
+    if (canAssign && match(TOK_ASSIGN)) {
+
+        expression();
+        emit_bytes(OP_SET_GLOBAL, arg);
+
+    } else
+        emit_bytes(OP_GET_GLOBAL, arg);
+}
+
+
 static void declaration(void) {
 
-    statement();
+    if (match(TOK_VAR))
+        var_declaration();
+
+    else
+        statement();
 
     if (parser.panicMode)
         synchronise();
@@ -378,6 +431,27 @@ static void expression_statement(void) {
 }
 
 
+static void var_declaration(void) {
+
+    uint8_t global = parse_variable("Expect variable name.");
+
+    if (match(TOK_ASSIGN))
+        expression();
+
+    else
+        emit_byte(OP_NIL);
+
+    consume(TOK_SEMICOLON, "Expect `;` after variable declaration.");
+    define_variable(global);
+}
+
+
+static void variable(bool canAssign) {
+
+    named_variable(parser.previous, canAssign);
+}
+
+
 static void synchronise(void) {
 
     parser.panicMode = false;
@@ -411,6 +485,10 @@ static void synchronise(void) {
 bool compile(const char* src, Chunk* chunk) {
 
     init_scanner(src);
+
+    Compiler compiler;
+    init_compiler(&compiler);
+
     compilingChunk = chunk;
 
     parser.hadError = false;

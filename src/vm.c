@@ -55,12 +55,14 @@ void boot_vm(void) {
 
     reset_stack();
     vm.objects = NULL;
+    init_table(&vm.globals);
     init_table(&vm.strings);
 }
 
 
 void shutdown_vm(void) {
 
+    free_table(&vm.globals);
     free_table(&vm.strings);
     free_objects();
 }
@@ -74,6 +76,7 @@ static InterpretResult run(void) {
 
     #define read_byte() (*vm.ip++)
     #define read_constant() (vm.chunk->constants.values[read_byte()])
+    #define read_string() as_string(read_constant())
 
     #define binary_op(valueType, op)                          \
                                                               \
@@ -123,6 +126,44 @@ static InterpretResult run(void) {
             case OP_TRUE:  push(bool_val(true));  break;
             case OP_FALSE: push(bool_val(false)); break;
             case OP_POP:   pop();                 break;
+
+            case OP_DEFINE_GLOBAL: {
+
+                ObjString* name = read_string();
+                table_set(&vm.globals, name, peek(0));
+                pop();
+
+            } break;
+
+            case OP_GET_GLOBAL: {
+
+                ObjString* name = read_string();
+                Value value;
+
+                if (!table_get(&vm.globals, name, &value)) {
+
+                    runtime_error("Undefined variable `%s`.", name->chars);
+                    return INTERPRET_RUNTIME_ERR;
+                }
+
+                push(value);
+                break;
+
+            } break;
+
+            case OP_SET_GLOBAL: {
+
+                ObjString* name = read_string();
+                
+                if (table_set(&vm.globals, name, peek(0))) {
+
+                    table_delete(&vm.globals, name);
+                    runtime_error("Undefined variable `%s`.", name->chars);
+
+                    return INTERPRET_RUNTIME_ERR;
+                }
+
+            } break;
 
             case OP_EQ: {
     
@@ -207,6 +248,7 @@ static InterpretResult run(void) {
     }
 
     #undef read_byte
+    #undef read_string
     #undef read_constant
     #undef binary_op
 }
