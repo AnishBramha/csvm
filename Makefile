@@ -1,7 +1,7 @@
 CC = cc
 
-CFLAGS = -std=c23 -Wall -Wextra -Werror -Wno-unused-parameter -fno-asm -Istd -Iinclude -ggdb -g -fsanitize=address -Wno-implicit-fallthrough
-LDFLAGS = -ggdb -g -fsanitize=address -lm
+CFLAGS = -std=c23 -Wall -Wextra -Werror -Wno-unused-parameter -fno-asm -Istd -Iinclude -ggdb -g -fsanitize=address -Wno-implicit-fallthrough -Ofast -march=native -flto -funroll-loops -fomit-frame-pointer -fno-semantic-interposition
+LDFLAGS = -ggdb -g -fsanitize=address -lm -flto -Wl,-O3 -Wl,--gc-sections
 
 TARGET = target/csvm.out
 BUILD_DIR = build

@@ -16,9 +16,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 
 VM vm;
+
+
+static Value sysclockf(int argc, Value* args) {
+
+    return number_val((double)clock() / CLOCKS_PER_SEC);
+}
 
 
 static Value peek(int distance);
@@ -59,6 +66,16 @@ static void runtime_error(const char* fmt, ...) {
 }
 
 
+static void define_native(const char* name, NativeFn function) {
+
+    push(obj_val(copy_string(name, (int)strlen(name))));
+    push(obj_val(new_native(function)));
+    table_set(&vm.globals, as_string(vm.stack[0]), vm.stack[1]);
+    pop();
+    pop();
+}
+
+
 static void free_objects(void);
 static void free_object(Obj*);
 
@@ -69,6 +86,8 @@ void boot_vm(void) {
     vm.objects = NULL;
     init_table(&vm.globals);
     init_table(&vm.strings);
+
+    define_native("sysclockf", sysclockf);
 }
 
 
@@ -397,6 +416,17 @@ static bool call_value(Value callee, int argc) {
             case OBJ_FUNCTION:
                 return call(as_function(callee), argc);
 
+            case OBJ_NATIVE: {
+
+                NativeFn native = as_native(callee);
+                Value result = native(argc, vm.stackTop - argc);
+
+                vm.stackTop -= argc + 1;
+                push(result);
+
+                return true;
+            };
+
             default: break;
         }
     }
@@ -452,6 +482,10 @@ static void free_object(Obj* object) {
             free(object); object = NULL;
     
         } break;
+
+        case OBJ_NATIVE:
+            free(object); object = NULL;
+            break;
     
         case OBJ_STRING: {
 

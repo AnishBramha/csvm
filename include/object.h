@@ -13,9 +13,11 @@ extern struct VM vm;
 #define obj_type(val)    (as_obj(val)->type)
 
 #define is_function(val) is_obj_type(val, OBJ_FUNCTION)
+#define is_native(val)   is_obj_type(val, OBJ_NATIVE)
 #define is_string(val)   is_obj_type(val, OBJ_STRING)
 
 #define as_function(val) ((ObjFunction*)as_obj(val))
+#define as_native(val)   (((ObjNative*)as_obj(val))->function)
 #define as_string(val)   ((ObjString*)as_obj(val))
 #define as_cstring(val)  (((ObjString*)as_obj(val))->chars)
 
@@ -23,6 +25,7 @@ extern struct VM vm;
 typedef enum {
 
     OBJ_FUNCTION,
+    OBJ_NATIVE,
     OBJ_STRING,
 
 } ObjType;
@@ -55,6 +58,19 @@ struct ObjString {
     char* chars;
     uint32_t hash;
 };
+
+
+typedef Value (*NativeFn)(int argc, Value* args);
+
+typedef struct {
+
+    Obj obj;
+    NativeFn function;
+
+} ObjNative;
+
+
+ObjNative* new_native(NativeFn function);
 
 
 ObjString* take_string(char* chars, int len);
