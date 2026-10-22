@@ -3,6 +3,7 @@
 #include "common.h"
 #include "table.h"
 #include "value.h"
+#include "vm.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,17 @@ static Obj* allocate_object(size_t size, ObjType type) {
     vm.objects = object;
 
     return object;
+}
+
+
+ObjFunction* new_function(void) {
+
+    ObjFunction* function = allocate_obj(ObjFunction, OBJ_FUNCTION);
+    function->arity = 0;
+    function->name = NULL;
+
+    init_chunk(&function->chunk);
+    return function;
 }
 
 
@@ -83,9 +95,26 @@ ObjString* copy_string(const char* chars, int len) {
 }
 
 
+static void fnprintf(ObjFunction* function) {
+
+    if (!function->name) {
+
+        printf("<script>");
+        return;
+    }
+
+    printf("<fn %s>", function->name->chars);
+}
+
+
 void objprintf(Value val) {
 
     switch (obj_type(val)) {
+
+        case OBJ_FUNCTION:
+            
+            fnprintf(as_function(val));
+            break;
     
         case OBJ_STRING:
 

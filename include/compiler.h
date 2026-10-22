@@ -59,7 +59,19 @@ typedef struct {
 } Local;
 
 
-typedef struct {
+typedef enum {
+
+    T_FUNCTION,
+    T_SCRIPT,
+
+} FunctionType;
+
+
+typedef struct Compiler {
+
+    struct Compiler* enclosing;
+    ObjFunction* function;
+    FunctionType type;
 
     Local locals[UINT8_COUNT];
     int localCount;
@@ -71,7 +83,7 @@ typedef struct {
 extern Compiler* current;
 
 
-bool compile(const char* src, Chunk*);
+ObjFunction* compile(const char* src);
 
 
 

@@ -26,6 +26,7 @@ static Value peek(int distance);
 static void reset_stack(void) {
 
     vm.stackTop = vm.stack;
+    vm.frameCount = 0;
 }
 
 
@@ -39,9 +40,20 @@ static void runtime_error(const char* fmt, ...) {
     va_end(args);
     fputc('\n', stderr);
 
-    size_t instruction = vm.ip - vm.chunk->code - 1;
-    int line = vm.chunk->lines[instruction];
-    eprintf("[line %d] in script\n", line);
+    downrange(int, i, vm.frameCount - 1, -1, 1) {
+
+        CallFrame* frame = &vm.frames[i];
+        ObjFunction* function = frame->function;
+        size_t instruction = frame->ip - function->chunk.code - 1;
+
+        eprintf("[line %d] in ", function->chunk.lines[instruction]);
+
+        if (!function->name)
+            eprintf("script\n");
+
+        else
+            eprintf("%s()\n", function->name->chars);
+    }
 
     reset_stack();
 }
@@ -70,13 +82,16 @@ void shutdown_vm(void) {
 
 static bool is_falsey(Value);
 static void concatenate(void);
+static bool call_value(Value callee, int argc);
 
 
 static InterpretResult run(void) {
 
-    #define read_byte() (*vm.ip++)
-    #define read_short() (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1]))
-    #define read_constant() (vm.chunk->constants.values[read_byte()])
+    CallFrame* frame = &vm.frames[vm.frameCount - 1];
+
+    #define read_byte() (*frame->ip++)
+    #define read_short() (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
+    #define read_constant() (frame->function->chunk.constants.values[read_byte()])
     #define read_string() as_string(read_constant())
 
     #define binary_op(valueType, op)                          \
@@ -109,7 +124,7 @@ static InterpretResult run(void) {
         }
     
         putchar('\n');
-        disassemble_instruction(vm.chunk, (int)(vm.ip - vm.chunk->code));
+        disassemble_instruction(&frame->function->chunk, (int)(frame->ip - frame->function->chunk.code));
 
         #endif
 
@@ -169,14 +184,14 @@ static InterpretResult run(void) {
             case OP_GET_LOCAL: {
 
                 uint8_t slot = read_byte();
-                push(vm.stack[slot]);
+                push(frame->slots[slot]);
 
             } break;
 
             case OP_SET_LOCAL: {
 
                 uint8_t slot = read_byte();
-                vm.stack[slot] = peek(0);
+                frame->slots[slot] = peek(0);
 
             } break;
 
@@ -260,7 +275,7 @@ static InterpretResult run(void) {
             case OP_JUMP: {
 
                 uint16_t offset = read_short();
-                vm.ip += offset;
+                frame->ip += offset;
 
             } break;
 
@@ -269,19 +284,44 @@ static InterpretResult run(void) {
                 uint16_t offset = read_short();
                 
                 if (is_falsey(peek(0)))
-                    vm.ip += offset;
+                    frame->ip += offset;
 
             } break;
 
             case OP_LOOP: {
 
                 uint16_t offset = read_short();
-                vm.ip -= offset;
+                frame->ip -= offset;
 
             } break;
 
-            case OP_RETURN:
-                return INTERPRET_OK;
+            case OP_CALL: {
+
+                int argc = read_byte();
+                
+                if (!call_value(peek(argc), argc))
+                    return INTERPRET_RUNTIME_ERR;
+
+                frame = &vm.frames[vm.frameCount - 1];
+
+            } break;
+
+            case OP_RETURN: {
+
+                Value result = pop();
+                vm.frameCount--;
+
+                if (!vm.frameCount) {
+
+                    pop();
+                    return INTERPRET_OK;
+                }
+
+                vm.stackTop = frame->slots;
+                push(result);
+                frame = &vm.frames[vm.frameCount - 1];
+
+            } break;
         }
     }
 
@@ -293,24 +333,40 @@ static InterpretResult run(void) {
 }
 
 
-InterpretResult interpret(const char* src) {
+static bool call(ObjFunction* function, int argc) {
 
-    Chunk chunk;
-    init_chunk(&chunk);
+    if (argc != function->arity) {
 
-    if (!compile(src, &chunk)) {
-
-        free_chunk(&chunk);
-        return INTERPRET_COMPILE_ERR;
+        runtime_error("Expected %d arguments but got %d.", function->arity, argc);
+        return false;
     }
 
-    vm.chunk = &chunk;
-    vm.ip = vm.chunk->code;
+    if (vm.frameCount == FRAMES_MAX) {
 
-    InterpretResult result = run();
+        runtime_error("Stack overflow.");
+        return false;
+    }
 
-    free_chunk(&chunk);
-    return result;
+    CallFrame* frame = &vm.frames[vm.frameCount++];
+    frame->function = function;
+    frame->ip = function->chunk.code;
+    frame->slots = vm.stackTop - argc - 1;
+
+    return true;
+}
+
+
+InterpretResult interpret(const char* src) {
+
+    ObjFunction* function = compile(src);
+
+    if (!function)
+        return INTERPRET_COMPILE_ERR;
+
+    push(obj_val(function));
+    call(function, 0);
+
+    return run();
 }
 
 
@@ -330,6 +386,23 @@ Value pop(void) {
 static Value peek(int distance) {
 
     return vm.stackTop[-1 - distance];
+}
+
+static bool call_value(Value callee, int argc) {
+
+    if (is_obj(callee)) {
+
+        switch (obj_type(callee)) {
+        
+            case OBJ_FUNCTION:
+                return call(as_function(callee), argc);
+
+            default: break;
+        }
+    }
+
+    runtime_error("Can only call functions and classes.");
+    return false;
 }
 
 
@@ -371,6 +444,14 @@ static void free_objects(void) {
 static void free_object(Obj* object) {
 
     switch (object->type) {
+
+        case OBJ_FUNCTION: {
+
+            ObjFunction* function = (ObjFunction*)object;
+            free_chunk(&function->chunk);
+            free(object); object = NULL;
+    
+        } break;
     
         case OBJ_STRING: {
 

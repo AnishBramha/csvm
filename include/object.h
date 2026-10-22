@@ -1,23 +1,28 @@
 #pragma once
 
 
+#include "chunk.h"
 #include "utils.h"
 #include "value.h"
-#include "vm.h"
 #include <stdint.h>
 
 
-extern VM vm;
+extern struct VM vm;
 
 
-#define obj_type(val)   (as_obj(val)->type)
-#define is_string(val)  is_obj_type(val, OBJ_STRING)
-#define as_string(val)  ((ObjString*)as_obj(val))
-#define as_cstring(val) (((ObjString*)as_obj(val))->chars)
+#define obj_type(val)    (as_obj(val)->type)
+
+#define is_function(val) is_obj_type(val, OBJ_FUNCTION)
+#define is_string(val)   is_obj_type(val, OBJ_STRING)
+
+#define as_function(val) ((ObjFunction*)as_obj(val))
+#define as_string(val)   ((ObjString*)as_obj(val))
+#define as_cstring(val)  (((ObjString*)as_obj(val))->chars)
 
 
 typedef enum {
 
+    OBJ_FUNCTION,
     OBJ_STRING,
 
 } ObjType;
@@ -28,6 +33,19 @@ struct Obj {
     ObjType type;
     struct Obj* next;
 };
+
+
+typedef struct ObjFunction {
+
+    Obj obj;
+    int arity;
+    Chunk chunk;
+    ObjString* name;
+
+} ObjFunction;
+
+
+ObjFunction* new_function(void);
 
 
 struct ObjString {

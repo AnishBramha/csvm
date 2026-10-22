@@ -20,12 +20,11 @@
 
 Parser parser;
 Compiler* current = NULL;
-Chunk* compilingChunk;
 
 
 static Chunk* current_chunk(void) {
 
-    return compilingChunk;
+    return &current->function->chunk;
 }
 
 
@@ -129,6 +128,7 @@ static int emit_jump(uint8_t instruction) {
 
 static void emit_return(void) {
 
+    emit_byte(OP_NIL);
     emit_byte(OP_RETURN);
 }
 
@@ -165,11 +165,24 @@ static void patch_jump(int offset) {
 }
 
 
-static void init_compiler(Compiler* compiler) {
+static void init_compiler(Compiler* compiler, FunctionType type) {
 
+    compiler->enclosing = current;
+    compiler->function = NULL;
+    compiler->type = type;
     compiler->localCount = 0;
     compiler->scopeDepth = 0;
+    compiler->function = new_function();
+
     current = compiler;
+
+    if (type != T_SCRIPT)
+        current->function->name = copy_string(parser.previous.start, parser.previous.len);
+
+    Local* local = &current->locals[current->localCount++];
+    local->depth = 0;
+    local->name.start = "";
+    local->name.len = 0;
 }
 
 
@@ -287,6 +300,9 @@ static uint8_t parse_variable(const char* errmsg) {
 
 static void mark_initialised(void) {
 
+    if (!current->scopeDepth)
+        return;
+
     current->locals[current->localCount - 1].depth = current->scopeDepth;
 }
 
@@ -313,16 +329,20 @@ static void and_(bool canAssign) {
 }
 
 
-static void end_compiler(void) {
+static ObjFunction* end_compiler(void) {
 
     emit_return();
+    ObjFunction* function = current->function;
 
     #ifdef DEBUG_PRINT_CODE
     
     if (!parser.hadError)
-        disassemble_chunk(current_chunk(), "code");
+        disassemble_chunk(current_chunk(), function->name ? function->name->chars : "<script>");
 
     #endif
+
+    current = (Compiler*)current->enclosing;
+    return function;
 }
 
 
@@ -373,11 +393,15 @@ static void expression_statement(void);
 static void var_declaration(void);
 static void variable(bool canAssign);
 static void block(void);
+static void fun_declaration(void);
+static void function(FunctionType type);
 static void if_statement(void);
 static void while_statement(void);
 static void for_statement(void);
 static void and_(bool canAssign);
 static void or_(bool canAssign);
+static void call(bool canAssign);
+static void return_statement(void);
 
 static void synchronise(void);
 
@@ -407,7 +431,7 @@ ParseRule rules[] = {
     [TOK_IOPUTF]     = {NULL,     NULL,   PREC_NONE},
     [TOK_JUMP]       = {NULL,     NULL,   PREC_NONE},
     [TOK_LBRACE]     = {NULL,     NULL,   PREC_NONE},
-    [TOK_LPAREN]     = {grouping, NULL,   PREC_NONE},
+    [TOK_LPAREN]     = {grouping, call,   PREC_CALL},
     [TOK_LTE]        = {NULL,     binary, PREC_CMP},
     [TOK_LT]         = {NULL,     binary, PREC_CMP},
     [TOK_MINUS]      = {unary,    binary, PREC_TERM},
@@ -560,7 +584,10 @@ static void named_variable(Token name, bool canAssign) {
 
 static void declaration(void) {
 
-    if (match(TOK_VAR))
+    if (match(TOK_DEF))
+        fun_declaration();
+
+    else if (match(TOK_VAR))
         var_declaration();
 
     else
@@ -578,6 +605,9 @@ static void statement(void) {
 
     else if (match(TOK_IOPUTFN))
         ioputfn_statement();
+
+    else if (match(TOK_JUMP))
+        return_statement();
 
     else if (match(TOK_IF))
         if_statement();
@@ -670,6 +700,48 @@ static void block(void) {
 }
 
 
+static void fun_declaration(void) {
+
+    uint8_t global = parse_variable("Expect function name.");
+    mark_initialised();
+    function(T_FUNCTION);
+    define_variable(global);
+}
+
+
+static void function(FunctionType type) {
+
+    Compiler compiler;
+    init_compiler(&compiler, type);
+    begin_scope();
+
+    consume(TOK_LPAREN, "Expect `(` after function name.");
+
+    if (!check(TOK_RPAREN)) {
+
+        do {
+
+            if (++current->function->arity > 255)
+                error_at_current("Cannot have more than 255 parameters.");
+
+            uint8_t constant = parse_variable("Expect parameter name.");
+            define_variable(constant);
+
+        } while (match(TOK_COMMA));
+    }
+
+    consume(TOK_RPAREN, "Expect `)` after parameters.");
+    consume(TOK_AS, "Expect `as` after function header.");
+    consume(TOK_DO, "Expect `do` before function body.");
+    consume(TOK_LBRACE, "Expect `{` before function body.");
+
+    block();
+
+    ObjFunction* function = end_compiler();
+    emit_bytes(OP_CONSTANT, make_constant(obj_val(function)));
+}
+
+
 static void if_statement(void) {
 
     expression();
@@ -747,6 +819,51 @@ static void for_statement(void) {
 }
 
 
+static uint8_t arglist(void) {
+
+    uint8_t argc = 0;
+    
+    if (!check(TOK_RPAREN)) {
+
+        do {
+
+            expression();
+
+            if (argc++ == 255)
+                error("Cannot have more than 255 arguments.");
+
+        } while (match(TOK_COMMA));
+    }
+    
+    consume(TOK_RPAREN, "Expect `)` after arguments.");
+    return argc;
+}
+
+
+static void call(bool canAssign) {
+
+    uint8_t argc = arglist();
+    emit_bytes(OP_CALL, argc);
+}
+
+
+static void return_statement(void) {
+
+    if (current->type == T_SCRIPT)
+        error("Cannot return from top-level code.");
+
+    if (match(TOK_SEMICOLON))
+        emit_return();
+
+    else {
+
+        expression();
+        consume(TOK_SEMICOLON, "Expect `;` after return value.");
+        emit_byte(OP_RETURN);
+    }
+}
+
+
 static void synchronise(void) {
 
     parser.panicMode = false;
@@ -777,14 +894,12 @@ static void synchronise(void) {
 }
 
 
-bool compile(const char* src, Chunk* chunk) {
+ObjFunction* compile(const char* src) {
 
     init_scanner(src);
 
     Compiler compiler;
-    init_compiler(&compiler);
-
-    compilingChunk = chunk;
+    init_compiler(&compiler, T_SCRIPT);
 
     parser.hadError = false;
     parser.panicMode = false;
@@ -794,9 +909,8 @@ bool compile(const char* src, Chunk* chunk) {
     while (!match(TOK_EOF))
         declaration();
 
-    end_compiler();
-
-    return !parser.hadError;
+    ObjFunction* function = end_compiler();
+    return parser.hadError ? NULL : function;
 }
 
 
