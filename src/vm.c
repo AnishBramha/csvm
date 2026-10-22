@@ -165,6 +165,20 @@ static InterpretResult run(void) {
 
             } break;
 
+            case OP_GET_LOCAL: {
+
+                uint8_t slot = read_byte();
+                push(vm.stack[slot]);
+
+            } break;
+
+            case OP_SET_LOCAL: {
+
+                uint8_t slot = read_byte();
+                vm.stack[slot] = peek(0);
+
+            } break;
+
             case OP_EQ: {
     
                 Value b = pop();

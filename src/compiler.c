@@ -9,6 +9,7 @@
 #include "value.h"
 #include "vm.h"
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef DEBUG_PRINT_CODE
 #include "debug.h"
@@ -171,14 +172,95 @@ static uint8_t identifier_constant(Token* name) {
 }
 
 
+static bool identifiers_equal(Token* a, Token* b) {
+
+    if (a->len != b->len)
+        return false;
+
+    return !memcmp(a->start, b->start, a->len);
+}
+
+
+static int resolve_local(Compiler* compiler, Token* name) {
+
+    downrange(int, i, compiler->localCount - 1, -1, 1) {
+
+        Local* local = &compiler->locals[i];
+
+        if (identifiers_equal(name, &local->name)) {
+
+            if (local->depth == -1)
+                error("Cannot read local variable in its own intialiser.");
+
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+
+static void add_local(Token name) {
+
+    if (current->localCount == UINT8_COUNT) {
+
+        error("Too many local variables in function.");
+        return;
+    }
+
+    Local* local = &current->locals[current->localCount++];
+    local->name = name;
+    local->depth = -1;
+}
+
+
+static void declare_variable(void) {
+
+    if (!current->scopeDepth)
+        return;
+
+    Token* name = &parser.previous;
+
+    downrange(int, i, current->localCount - 1, -1, 1) {
+
+        Local* local = &current->locals[i];
+    
+        if (local->depth != -1 && local->depth < current->scopeDepth)
+            break;
+
+        if (identifiers_equal(name, &local->name))
+            error("Redeclaring a variable with the same name in the same scope.");
+    }
+
+    add_local(*name);
+}
+
+
 static uint8_t parse_variable(const char* errmsg) {
 
     consume(TOK_IDENTIFIER, errmsg);
+    declare_variable();
+    
+    if (current->scopeDepth > 0)
+        return 0;
+
     return identifier_constant(&parser.previous);
 }
 
 
+static void mark_initialised(void) {
+
+    current->locals[current->localCount - 1].depth = current->scopeDepth;
+}
+
+
 static void define_variable(uint8_t global) {
+
+    if (current->scopeDepth > 0) {
+
+        mark_initialised();
+        return;
+    }
 
     emit_bytes(OP_DEFINE_GLOBAL, global);
 }
@@ -194,6 +276,23 @@ static void end_compiler(void) {
         disassemble_chunk(current_chunk(), "code");
 
     #endif
+}
+
+
+static void begin_scope(void) {
+
+    current->scopeDepth++;
+}
+
+static void end_scope(void) {
+
+    current->scopeDepth--;
+
+    while (current->localCount > 0 && current->locals[current->localCount - 1].depth > current->scopeDepth) {
+
+        emit_byte(OP_POP);
+        current->localCount--;
+    }
 }
 
 
@@ -226,6 +325,7 @@ static void ioputfn_statement(void);
 static void expression_statement(void);
 static void var_declaration(void);
 static void variable(bool canAssign);
+static void block(void);
 
 static void synchronise(void);
 
@@ -369,15 +469,28 @@ static void str(bool canAssign) {
 
 static void named_variable(Token name, bool canAssign) {
 
-    uint8_t arg = identifier_constant(&name);
+    uint8_t getOp, setOp;
+    int arg = resolve_local(current, &name);
+
+    if (arg != -1) {
+
+        getOp = OP_GET_LOCAL;
+        setOp = OP_SET_LOCAL;
+
+    } else {
+
+        arg = identifier_constant(&name);
+        getOp = OP_GET_GLOBAL;
+        setOp = OP_SET_GLOBAL;
+    }
 
     if (canAssign && match(TOK_ASSIGN)) {
 
         expression();
-        emit_bytes(OP_SET_GLOBAL, arg);
+        emit_bytes(setOp, (uint8_t)arg);
 
     } else
-        emit_bytes(OP_GET_GLOBAL, arg);
+        emit_bytes(getOp, (uint8_t)arg);
 }
 
 
@@ -402,7 +515,13 @@ static void statement(void) {
     else if (match(TOK_IOPUTFN))
         ioputfn_statement();
 
-    else
+    else if (match(TOK_LBRACE)) {
+    
+        begin_scope();
+        block();
+        end_scope();
+
+    } else
         expression_statement();
 }
 
@@ -449,6 +568,15 @@ static void var_declaration(void) {
 static void variable(bool canAssign) {
 
     named_variable(parser.previous, canAssign);
+}
+
+
+static void block(void) {
+
+    while (!check(TOK_RBRACE) && !check(TOK_EOF))
+        declaration();
+
+    consume(TOK_RBRACE, "Expect `}` after block");
 }
 
 
