@@ -1,4 +1,5 @@
 #include "compiler.h"
+#include "array.h"
 #include "chunk.h"
 #include "common.h"
 #include "object.h"
@@ -10,6 +11,7 @@
 #include "vm.h"
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 #ifdef DEBUG_PRINT_CODE
 #include "debug.h"
@@ -102,6 +104,29 @@ static void emit_bytes(uint8_t byte1, uint8_t byte2) {
 }
 
 
+static void emit_loop(int loopStart) {
+
+    emit_byte(OP_LOOP);
+    
+    int offset = (int)arr_len(current_chunk()->code) - loopStart + 2;
+    if (offset > UINT16_MAX)
+        error("Loop body too large.");
+
+    emit_byte((offset >> 8) & 0xff);
+    emit_byte(offset & 0xff);
+}
+
+
+static int emit_jump(uint8_t instruction) {
+
+    emit_byte(instruction);
+    emit_byte(0xff);
+    emit_byte(0xff);
+    
+    return (int)arr_len(current_chunk()->code) - 2;
+}
+
+
 static void emit_return(void) {
 
     emit_byte(OP_RETURN);
@@ -125,6 +150,18 @@ static uint8_t make_constant(Value value) {
 static void emit_constant(Value value) {
 
     emit_bytes(OP_CONSTANT, make_constant(value));
+}
+
+
+static void patch_jump(int offset) {
+
+    int jump = (int)arr_len(current_chunk()->code) - offset - 2;
+
+    if (jump > UINT16_MAX)
+        error("Too much code to jump over.");
+
+    current_chunk()->code[offset] = (jump >> 8) & 0xff;
+    current_chunk()->code[offset + 1] = jump & 0xff;
 }
 
 
@@ -266,6 +303,16 @@ static void define_variable(uint8_t global) {
 }
 
 
+static void and_(bool canAssign) {
+
+    int endJump = emit_jump(OP_JUMP_IF_FALSE);
+
+    emit_byte(OP_POP);
+    parse_precedence(PREC_AND);
+    patch_jump(endJump);
+}
+
+
 static void end_compiler(void) {
 
     emit_return();
@@ -326,13 +373,18 @@ static void expression_statement(void);
 static void var_declaration(void);
 static void variable(bool canAssign);
 static void block(void);
+static void if_statement(void);
+static void while_statement(void);
+static void for_statement(void);
+static void and_(bool canAssign);
+static void or_(bool canAssign);
 
 static void synchronise(void);
 
 
 ParseRule rules[] = {
 
-    [TOK_AND]        = {NULL,     NULL,   PREC_NONE},
+    [TOK_AND]        = {NULL,     and_,   PREC_NONE},
     [TOK_AS]         = {NULL,     NULL,   PREC_NONE},
     [TOK_ASSIGN]     = {NULL,     NULL,   PREC_NONE},
     [TOK_BANG]       = {unary,    NULL,   PREC_NONE},
@@ -362,7 +414,7 @@ ParseRule rules[] = {
     [TOK_NEQ]        = {NULL,     binary, PREC_EQ},
     [TOK_NIL]        = {literal,  NULL,   PREC_NONE},
     [TOK_NUMBER]     = {number,   NULL,   PREC_NONE},
-    [TOK_OR]         = {NULL,     NULL,   PREC_NONE},
+    [TOK_OR]         = {NULL,     or_,    PREC_NONE},
     [TOK_PLUS]       = {NULL,     binary, PREC_TERM},
     [TOK_POW]        = {NULL,     binary, PREC_FACTOR},
     [TOK_RBRACE]     = {NULL,     NULL,   PREC_NONE},
@@ -445,6 +497,18 @@ static void number(bool canAssign) {
 }
 
 
+static void or_(bool canAssign) {
+
+    int elseJump = emit_jump(OP_JUMP_IF_FALSE);
+    int endJump = emit_jump(OP_JUMP);
+
+    patch_jump(elseJump);
+    emit_byte(OP_POP);
+    parse_precedence(PREC_OR);
+    patch_jump(endJump);
+}
+
+
 static void unary(bool canAssign) {
 
     TokenType operatorType = parser.previous.type;
@@ -515,6 +579,15 @@ static void statement(void) {
     else if (match(TOK_IOPUTFN))
         ioputfn_statement();
 
+    else if (match(TOK_IF))
+        if_statement();
+
+    else if (match(TOK_WHILE))
+        while_statement();
+
+    else if (match(TOK_FOR))
+        for_statement();
+
     else if (match(TOK_LBRACE)) {
     
         begin_scope();
@@ -539,6 +612,23 @@ static void ioputfn_statement(void) {
     expression();
     consume(TOK_SEMICOLON, "Expect `;` after value.");
     emit_byte(OP_IOPUTFN);
+}
+
+
+static void while_statement(void) {
+
+    int loopStart = (int)arr_len(current_chunk()->code);
+    
+    expression();
+    consume(TOK_DO, "Expect `do` after `while` condition");
+
+    int exitJump = emit_jump(OP_JUMP_IF_FALSE);
+    emit_byte(OP_POP);
+    statement();
+    emit_loop(loopStart);
+
+    patch_jump(exitJump);
+    emit_byte(OP_POP);
 }
 
 
@@ -577,6 +667,83 @@ static void block(void) {
         declaration();
 
     consume(TOK_RBRACE, "Expect `}` after block");
+}
+
+
+static void if_statement(void) {
+
+    expression();
+    consume(TOK_THEN, "Expect `then` after `if` condition.");
+    consume(TOK_DO, "Expect `do` after `if` clause.");
+    
+    int thenJump = emit_jump(OP_JUMP_IF_FALSE);
+    emit_byte(OP_POP);
+    statement();
+
+    int elseJump = emit_jump(OP_JUMP);
+
+    patch_jump(thenJump);
+    emit_byte(OP_POP);
+
+    if (match(TOK_ELSE)) {
+
+        consume(TOK_DO, "Expect `do` after `else`.");
+        statement();
+    }
+
+    patch_jump(elseJump);
+}
+
+
+static void for_statement(void) {
+
+    begin_scope();
+
+    if (match(TOK_SEMICOLON));
+
+    else if (match(TOK_VAR))
+        var_declaration();
+
+    else
+        expression_statement();
+    
+    int loopStart = (int)arr_len(current_chunk()->code);
+    int exitJump = -1;
+
+    if (!match(TOK_SEMICOLON)) {
+
+        expression();
+        consume(TOK_SEMICOLON, "Expect `;` after loop condition.");
+
+        exitJump = emit_jump(OP_JUMP_IF_FALSE);
+        emit_byte(OP_POP);
+    }
+
+    if (!match(TOK_DO)) {
+
+        int bodyJump = emit_jump(OP_JUMP);
+        int incrementStart = (int)arr_len(current_chunk()->code);
+    
+        expression();
+        emit_byte(OP_POP);
+        consume(TOK_SEMICOLON, "Expect `;` after `for` clauses.");
+        consume(TOK_DO, "Expect `do` after `for` clauses.");
+        
+        emit_loop(loopStart);
+        loopStart = incrementStart;
+        patch_jump(bodyJump);
+    }
+
+    statement();
+    emit_loop(loopStart);
+
+    if (exitJump != -1) {
+
+        patch_jump(exitJump);
+        emit_byte(OP_POP);
+    }
+
+    end_scope();
 }
 
 
